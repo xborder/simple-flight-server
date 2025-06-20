@@ -161,8 +161,8 @@ public class Main {
           // Check if listener was cancelled during the wait
           boolean isCancelled = listener.isCancelled();
           boolean isReady = listener.isReady();
-          System.out.println("📊 After 70 seconds - Listener cancelled: " + isCancelled);
-          System.out.println("📊 After 70 seconds - Listener isReady: " + isReady);
+          System.out.println("📊 Listener cancelled: " + isCancelled);
+          System.out.println("📊 Listener isReady: " + isReady);
 
           if (isCancelled) {
             System.out.println("❌ Request was cancelled, not sending data");
@@ -194,10 +194,6 @@ public class Main {
             System.out.println("✅ Data stream completed");
             listener.completed();
           }
-        } catch (InterruptedException e) {
-          System.out.println("⚠️ Thread was interrupted during wait");
-          Thread.currentThread().interrupt();
-          listener.error(new RuntimeException("Stream interrupted", e));
         } catch (Exception e) {
           System.out.println("❌ Error in getStream: " + e.getMessage());
           listener.error(e);

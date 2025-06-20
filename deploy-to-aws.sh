@@ -20,6 +20,90 @@ NC='\033[0m' # No Color
 echo -e "${GREEN}Flight Server AWS Deployment Script${NC}"
 echo "======================================"
 
+# Check for update-server flag
+if [[ "$1" == "--update-server" ]]; then
+    echo -e "\n${YELLOW}Server Update Mode${NC}"
+    echo "Updating existing deployment with new server binary..."
+
+    # Check prerequisites for update
+    if ! command -v aws &> /dev/null; then
+        echo -e "${RED}Error: AWS CLI is not installed.${NC}"
+        exit 1
+    fi
+
+    if ! aws sts get-caller-identity &> /dev/null; then
+        echo -e "${RED}Error: AWS CLI is not configured.${NC}"
+        exit 1
+    fi
+
+    if [ ! -f "$JAR_FILE" ]; then
+        echo -e "${RED}Error: JAR file not found at $JAR_FILE${NC}"
+        echo "Please run 'mvn clean package' first to build the JAR."
+        exit 1
+    fi
+
+    # Get existing deployment info
+    echo -e "\n${YELLOW}Getting existing deployment information...${NC}"
+    INSTANCE_IP=$(aws cloudformation describe-stacks \
+        --stack-name "$STACK_NAME" \
+        --region "$REGION" \
+        --query 'Stacks[0].Outputs[?OutputKey==`InstancePublicIP`].OutputValue' \
+        --output text 2>/dev/null)
+
+    if [ -z "$INSTANCE_IP" ] || [ "$INSTANCE_IP" == "None" ]; then
+        echo -e "${RED}Error: Could not find existing deployment. Stack '$STACK_NAME' not found.${NC}"
+        echo "Please run full deployment first: ./deploy-to-aws.sh"
+        exit 1
+    fi
+
+    echo "Found existing instance: $INSTANCE_IP"
+
+    # Upload and restart server
+    echo -e "\n${YELLOW}Uploading new server binary...${NC}"
+    scp -i flight-server-key.pem -o StrictHostKeyChecking=no "$JAR_FILE" "ec2-user@$INSTANCE_IP:/tmp/"
+
+    echo -e "\n${YELLOW}Restarting Flight server...${NC}"
+    ssh -i flight-server-key.pem -o StrictHostKeyChecking=no "ec2-user@$INSTANCE_IP" << 'EOF'
+sudo systemctl stop flight-server
+sudo mv /tmp/simple-flight-server-1.0-SNAPSHOT.jar /opt/flight-server/
+sudo chown flight:flight /opt/flight-server/simple-flight-server-1.0-SNAPSHOT.jar
+sudo systemctl start flight-server
+echo "Waiting for service to start..."
+sleep 5
+sudo systemctl status flight-server
+EOF
+
+    echo -e "\n${GREEN}✓ Server update completed successfully!${NC}"
+
+    # Get load balancer info
+    LOAD_BALANCER_DNS=$(aws cloudformation describe-stacks \
+        --stack-name "$STACK_NAME" \
+        --region "$REGION" \
+        --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerDNS`].OutputValue' \
+        --output text 2>/dev/null)
+
+    FLIGHT_ENDPOINT=$(aws cloudformation describe-stacks \
+        --stack-name "$STACK_NAME" \
+        --region "$REGION" \
+        --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerEndpoint`].OutputValue' \
+        --output text 2>/dev/null)
+
+    echo ""
+    echo "======================================"
+    echo -e "${GREEN}Updated Deployment Information:${NC}"
+    echo "======================================"
+    echo "Instance Public IP: $INSTANCE_IP"
+    echo "Load Balancer DNS: $LOAD_BALANCER_DNS"
+    echo "Flight Server Endpoint: $FLIGHT_ENDPOINT"
+    echo ""
+    echo "Test the updated server:"
+    echo "java --add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED \\"
+    echo "     -cp \"target/classes:\$(mvn dependency:build-classpath -Dmdep.outputFile=/dev/stdout -q)\" \\"
+    echo "     org.example.AWSFlightClient $LOAD_BALANCER_DNS"
+
+    exit 0
+fi
+
 # Check prerequisites
 echo -e "\n${YELLOW}Checking prerequisites...${NC}"
 
@@ -126,10 +210,13 @@ echo "Waiting for instance to be ready..."
 sleep 30  # Give the instance time to complete initialization
 
 # Copy JAR file
+echo "Uploading $JAR_FILE to EC2 instance..."
 scp -i "$KEY_PAIR_NAME.pem" -o StrictHostKeyChecking=no "$JAR_FILE" "ec2-user@$INSTANCE_IP:/tmp/"
 
 # Install and start the service
+echo "Installing and starting Flight server service..."
 ssh -i "$KEY_PAIR_NAME.pem" -o StrictHostKeyChecking=no "ec2-user@$INSTANCE_IP" << 'EOF'
+sudo systemctl stop flight-server 2>/dev/null || true
 sudo mv /tmp/simple-flight-server-1.0-SNAPSHOT.jar /opt/flight-server/
 sudo chown flight:flight /opt/flight-server/simple-flight-server-1.0-SNAPSHOT.jar
 sudo systemctl start flight-server
@@ -153,3 +240,12 @@ echo "java --add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAM
 echo "(Update your client code to connect to: $FLIGHT_ENDPOINT)"
 echo ""
 echo -e "${YELLOW}Note: It may take a few minutes for the load balancer health checks to pass.${NC}"
+echo ""
+echo "======================================"
+echo -e "${GREEN}Update Commands:${NC}"
+echo "======================================"
+echo "To update the server binary only:"
+echo "./deploy-to-aws.sh --update-server"
+echo ""
+echo "To rebuild and update:"
+echo "mvn clean package && ./deploy-to-aws.sh --update-server"
