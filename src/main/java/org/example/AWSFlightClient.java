@@ -15,17 +15,31 @@ public class AWSFlightClient {
   
   public static void main(String[] args) throws Exception {
     if (args.length == 0) {
-      System.err.println("Usage: java AWSFlightClient <load-balancer-dns-name>");
-      System.err.println("Example: java AWSFlightClient flight-server-nlb-1234567890.elb.us-east-1.amazonaws.com");
+      System.err.println("Usage: java AWSFlightClient <load-balancer-dns-name> [--delay]");
+      System.err.println("Examples:");
+      System.err.println("  java AWSFlightClient flight-server-nlb-1234567890.elb.us-east-1.amazonaws.com");
+      System.err.println("  java AWSFlightClient flight-server-nlb-1234567890.elb.us-east-1.amazonaws.com --delay");
       System.exit(1);
     }
     
     String serverHost = args[0];
     int port = 8815;
-    
+    boolean useDelay = false;
+
+    // Check for delay argument
+    if (args.length > 1 && "--delay".equals(args[1])) {
+      useDelay = true;
+    }
+
     System.out.println("Connecting to AWS Flight Server...");
     System.out.println("Host: " + serverHost);
     System.out.println("Port: " + port);
+    if (useDelay) {
+      System.out.println("Mode: 🐌 DELAYED response (70 seconds)");
+      System.out.println("💡 This will test load balancer idle timeout behavior");
+    } else {
+      System.out.println("Mode: ⚡ NORMAL response (immediate)");
+    }
     System.out.println();
     
     try (BufferAllocator allocator = new RootAllocator(Long.MAX_VALUE)) {
@@ -42,7 +56,8 @@ public class AWSFlightClient {
         });
 
         // Get flight info
-        FlightDescriptor descriptor = FlightDescriptor.path("sample");
+        String flightName = useDelay ? "sample-delay" : "sample";
+        FlightDescriptor descriptor = FlightDescriptor.path(flightName);
         FlightInfo info = client.getInfo(descriptor);
         System.out.println("\n📊 Got flight info for: " + info.getDescriptor());
         System.out.println("  Endpoints: " + info.getEndpoints().size());
@@ -50,6 +65,12 @@ public class AWSFlightClient {
 
         // Get data from the server
         System.out.println("\n📥 Getting data stream:");
+        if (useDelay) {
+          System.out.println("⏰ Server will wait 70 seconds before responding...");
+          System.out.println("💡 This tests the load balancer idle timeout behavior");
+        }
+
+        long startTime = System.currentTimeMillis();
         Ticket ticket = info.getEndpoints().get(0).getTicket();
         try (FlightStream stream = client.getStream(ticket)) {
           Schema schema = stream.getSchema();
@@ -68,6 +89,18 @@ public class AWSFlightClient {
               }
             }
           }
+        }
+
+        long endTime = System.currentTimeMillis();
+        long duration = endTime - startTime;
+
+        System.out.println("\n⏱️  Data stream duration: " + duration + " ms (" + (duration / 1000.0) + " seconds)");
+
+        if (useDelay && duration < 60000) {
+          System.out.println("⚠️  Warning: Expected delay of 70 seconds, but completed in " + (duration / 1000.0) + " seconds");
+          System.out.println("💡 This might indicate a timeout or connection issue");
+        } else if (useDelay && duration >= 60000) {
+          System.out.println("✅ Delay test completed - server waited as expected");
         }
 
         // Do an action

@@ -108,40 +108,60 @@ public class Main {
 
     @Override
     public void listFlights(CallContext context, Criteria criteria, StreamListener<FlightInfo> listener) {
-      // Create flight info for our sample data
-      FlightDescriptor descriptor = FlightDescriptor.path("sample");
-      FlightEndpoint endpoint = new FlightEndpoint(
+      // Create flight info for normal sample data
+      FlightDescriptor descriptor1 = FlightDescriptor.path("sample");
+      FlightEndpoint endpoint1 = new FlightEndpoint(
           new Ticket("sample".getBytes()),
           Location.forGrpcInsecure("localhost", 8815)
       );
 
-      FlightInfo flightInfo = new FlightInfo(
+      FlightInfo flightInfo1 = new FlightInfo(
           schema,
-          descriptor,
-          Collections.singletonList(endpoint),
+          descriptor1,
+          Collections.singletonList(endpoint1),
           -1, // Unknown number of bytes
           10  // 10 rows
       );
 
-      listener.onNext(flightInfo);
+      // Create flight info for delayed sample data
+      FlightDescriptor descriptor2 = FlightDescriptor.path("sample-delay");
+      FlightEndpoint endpoint2 = new FlightEndpoint(
+          new Ticket("sample-delay".getBytes()),
+          Location.forGrpcInsecure("localhost", 8815)
+      );
+
+      FlightInfo flightInfo2 = new FlightInfo(
+          schema,
+          descriptor2,
+          Collections.singletonList(endpoint2),
+          -1, // Unknown number of bytes
+          10  // 10 rows
+      );
+
+      listener.onNext(flightInfo1);
+      listener.onNext(flightInfo2);
       listener.onCompleted();
     }
 
     @Override
     public FlightInfo getFlightInfo(CallContext context, FlightDescriptor descriptor) {
-      if (descriptor.getPath().size() == 1 && "sample".equals(descriptor.getPath().get(0))) {
-        FlightEndpoint endpoint = new FlightEndpoint(
-            new Ticket("sample".getBytes()),
-            Location.forGrpcInsecure("localhost", 8815)
-        );
+      if (descriptor.getPath().size() == 1) {
+        String flightPath = descriptor.getPath().get(0);
 
-        return new FlightInfo(
-            schema,
-            descriptor,
-            Collections.singletonList(endpoint),
-            -1, // Unknown number of bytes
-            10  // 10 rows
-        );
+        if ("sample".equals(flightPath) || "sample-delay".equals(flightPath)) {
+          FlightEndpoint endpoint = new FlightEndpoint(
+              new Ticket(flightPath.getBytes()),
+              Location.forGrpcInsecure("localhost", 8815)
+          );
+
+          return new FlightInfo(
+              schema,
+              descriptor,
+              Collections.singletonList(endpoint),
+              -1, // Unknown number of bytes
+              10  // 10 rows
+          );
+        }
       }
       throw CallStatus.NOT_FOUND.withDescription("Flight not found: " + descriptor).toRuntimeException();
     }
@@ -150,23 +170,35 @@ public class Main {
     public void getStream(CallContext context, Ticket ticket, ServerStreamListener listener) {
       String ticketString = new String(ticket.getBytes());
 
-      if ("sample".equals(ticketString)) {
+      if ("sample".equals(ticketString) || "sample-delay".equals(ticketString)) {
         System.out.println("🔄 getStream called for ticket: " + ticketString);
-        System.out.println("⏰ Waiting 70 seconds before sending data...");
+
+        // Check if delay is requested
+        boolean shouldDelay = "sample-delay".equals(ticketString);
 
         try {
-          // Wait for 70 seconds (exceeds 60s NLB idle timeout)
-          Thread.sleep(70000);
+          if (shouldDelay) {
+            System.out.println("⏰ Delay requested - Waiting 70 seconds before sending data...");
+            Thread.sleep(70000);
 
-          // Check if listener was cancelled during the wait
-          boolean isCancelled = listener.isCancelled();
-          boolean isReady = listener.isReady();
-          System.out.println("📊 Listener cancelled: " + isCancelled);
-          System.out.println("📊 Listener isReady: " + isReady);
+            // Check if listener was cancelled during the wait
+            boolean isCancelled = listener.isCancelled();
+            boolean isReady = listener.isReady();
+            System.out.println("📊 After 70 seconds - Listener cancelled: " + isCancelled);
+            System.out.println("📊 After 70 seconds - Listener isReady: " + isReady);
 
-          if (isCancelled) {
-            System.out.println("❌ Request was cancelled, not sending data");
-            return;
+            if (isCancelled) {
+              System.out.println("❌ Request was cancelled, not sending data");
+              return;
+            }
+          } else {
+            System.out.println("⚡ No delay requested - Sending data immediately");
+
+            // Check listener status without delay
+            boolean isCancelled = listener.isCancelled();
+            boolean isReady = listener.isReady();
+            System.out.println("📊 Listener cancelled: " + isCancelled);
+            System.out.println("📊 Listener isReady: " + isReady);
           }
 
           System.out.println("✅ Proceeding to send data...");
@@ -194,6 +226,10 @@ public class Main {
             System.out.println("✅ Data stream completed");
             listener.completed();
           }
+        } catch (InterruptedException e) {
+          System.out.println("⚠️ Thread was interrupted during wait");
+          Thread.currentThread().interrupt();
+          listener.error(new RuntimeException("Stream interrupted", e));
         } catch (Exception e) {
           System.out.println("❌ Error in getStream: " + e.getMessage());
           listener.error(e);
