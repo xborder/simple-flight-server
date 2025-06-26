@@ -1,12 +1,22 @@
 # Simple Flight Server
 
-A simple Apache Arrow Flight server and client implementation in Java that demonstrates basic Flight RPC functionality.
+A comprehensive Apache Arrow Flight server and client implementation in Java that demonstrates Flight RPC functionality, including **PollFlightInfo** for long-running queries that exceed network load balancer timeout limits.
+
+## Features
+
+- **Basic Flight Operations**: Server with sample data, client testing, flight listing
+- **PollFlightInfo Implementation**: Non-blocking long-running query support following Flight specification
+- **Multiple Query Types**: 1 minute to 2 hours duration for testing various scenarios
+- **AWS Deployment**: Production-ready deployment with Network Load Balancer
+- **Thread Safety**: Concurrent query execution with real-time progress tracking
+- **NLB Timeout Resilience**: Handles queries exceeding load balancer timeout limits
 
 ## Overview
 
-This application can run in two modes:
-- **Server Mode**: Starts a Flight server that provides sample data
+This application can run in multiple modes:
+- **Server Mode**: Starts a Flight server that provides sample data and long-running queries
 - **Client Mode**: Connects to a Flight server and retrieves data
+- **PollFlightInfo Client**: Tests long-running queries with non-blocking polling
 
 ## Prerequisites
 
@@ -141,7 +151,16 @@ java --add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED \
 mvn clean compile
 ```
 
-### 2. Run Server (Choose one method)
+### 2. Test PollFlightInfo (Recommended)
+
+Test the 65-second fixed polling scenario on AWS:
+```bash
+java --add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED \
+     -cp "target/classes:$(mvn dependency:build-classpath -Dmdep.outputFile=/dev/stdout -q)" \
+     org.example.PollFlightClient --fixed-polling your-load-balancer-dns.elb.amazonaws.com
+```
+
+### 3. Run Server (Choose one method)
 ```bash
 # Method 1: Maven
 mvn exec:java -Dexec.mainClass="org.example.Main" -Dexec.args="-server"
@@ -155,7 +174,7 @@ java --add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED \
 ./run-server.sh
 ```
 
-### 3. Run Client (Choose one method)
+### 4. Run Client (Choose one method)
 ```bash
 # Method 1: Maven (local connection)
 mvn exec:java -Dexec.mainClass="org.example.Main"
@@ -174,8 +193,114 @@ java --add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED \
 ./run-client.sh
 ```
 
+## PollFlightInfo Testing
+
+This implementation includes comprehensive **PollFlightInfo** support for long-running queries that exceed network load balancer timeout limits.
+
+### Available Query Types
+
+| Query Type | Duration | Use Case |
+|------------|----------|----------|
+| `medium-query` | 1 minute | Fixed polling tests |
+| `long-query` | 2 minutes | Standard testing |
+| `very-long-query` | 5 minutes | Extended testing |
+| `ultra-long-query` | 2 hours | NLB timeout testing |
+
+### PollFlightInfo Test Commands
+
+#### 1. Fixed 65-Second Polling Test (Recommended)
+Tests a client that polls for exactly 65 seconds and retrieves data:
+```bash
+# AWS testing (recommended)
+java --add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED \
+     -cp "target/classes:$(mvn dependency:build-classpath -Dmdep.outputFile=/dev/stdout -q)" \
+     org.example.PollFlightClient --fixed-polling your-load-balancer-dns.elb.amazonaws.com
+
+# Local testing
+java --add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED \
+     -cp "target/classes:$(mvn dependency:build-classpath -Dmdep.outputFile=/dev/stdout -q)" \
+     org.example.PollFlightClient --fixed-polling
+```
+
+**Expected Behavior:**
+- Polls every 5 seconds for up to 65 seconds
+- Query completes around 60 seconds
+- Retrieves complete dataset (100 rows)
+- Shows "Complete dataset retrieved"
+
+#### 2. Standard Polling Tests (Poll Until Completion)
+```bash
+# 2-minute query
+java --add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED \
+     -cp "target/classes:$(mvn dependency:build-classpath -Dmdep.outputFile=/dev/stdout -q)" \
+     org.example.PollFlightClient --long your-load-balancer-dns.elb.amazonaws.com
+
+# 5-minute query
+java --add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED \
+     -cp "target/classes:$(mvn dependency:build-classpath -Dmdep.outputFile=/dev/stdout -q)" \
+     org.example.PollFlightClient --very-long your-load-balancer-dns.elb.amazonaws.com
+
+# 2-hour query (tests NLB timeout resilience)
+java --add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED \
+     -cp "target/classes:$(mvn dependency:build-classpath -Dmdep.outputFile=/dev/stdout -q)" \
+     org.example.PollFlightClient --ultra-long your-load-balancer-dns.elb.amazonaws.com
+```
+
+#### 3. Local Server Testing
+```bash
+# Terminal 1: Start local server
+java --add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED \
+     -cp "target/classes:$(mvn dependency:build-classpath -Dmdep.outputFile=/dev/stdout -q)" \
+     org.example.Main -server
+
+# Terminal 2: Test PollFlightInfo client
+java --add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED \
+     -cp "target/classes:$(mvn dependency:build-classpath -Dmdep.outputFile=/dev/stdout -q)" \
+     org.example.PollFlightClient --fixed-polling
+```
+
+### PollFlightInfo Benefits
+
+- **Non-Blocking**: Client never hangs for hours during long queries
+- **Progress Monitoring**: Real-time progress updates from 0% to 100%
+- **Resource Efficient**: Server doesn't hold connections during execution
+- **NLB Compatible**: Short polling requests work with any timeout configuration
+- **Scalable**: Multiple concurrent long-running queries supported
+
+### Expected PollFlightInfo Output
+
+```
+🧪 Fixed Duration Polling Test
+==============================
+🚀 Starting long-running query: medium-query
+📊 Initial poll response received
+  Progress: 0.0%
+  Has FlightInfo: true
+  Has poll descriptor: true
+
+🔄 Polling query status (poll #2, elapsed: 5s)...
+📊 Poll response:
+  Progress: 8.8%
+  Has FlightInfo: true
+⏳ Query still running, continuing to poll...
+
+...
+
+✅ Query completed during polling! (at poll #13)
+📊 FlightInfo available after 65 seconds:
+  Schema: Schema<value: Int(32, true)>
+  Records: 100
+  Endpoints: 1
+
+📥 Retrieving available data...
+  Total: 100 rows in 1 batches
+  ✅ Complete dataset retrieved
+
+✅ Fixed duration polling test completed!
+```
+
 ### Expected Client Behavior
-The client will:
+The standard client will:
 1. Connect to the server at localhost:8815 (or specified AWS endpoint)
 2. List available flights
 3. Get flight information
@@ -317,6 +442,7 @@ The project includes:
 src/main/java/org/example/
 ├── Main.java                 # Main application with server/client modes
 ├── AWSFlightClient.java      # AWS-specific client for testing deployments
+├── PollFlightClient.java     # PollFlightInfo client for long-running queries
 └── SampleFlightProducer      # Flight server implementation (inner class)
 target/
 └── simple-flight-server-1.0-SNAPSHOT.jar  # Executable JAR with all dependencies (~24MB)
@@ -340,6 +466,8 @@ run-client.sh                # Convenience script to run client locally
 | **Java Server** | Production/Reliable | `java --add-opens=... -cp "target/classes:$(mvn dependency:build-classpath -Dmdep.outputFile=/dev/stdout -q)" org.example.Main -server` |
 | **Java Local Client** | Local testing | `java --add-opens=... -cp "target/classes:$(mvn dependency:build-classpath -Dmdep.outputFile=/dev/stdout -q)" org.example.Main` |
 | **Java AWS Client** | AWS testing | `java --add-opens=... -cp "target/classes:$(mvn dependency:build-classpath -Dmdep.outputFile=/dev/stdout -q)" org.example.AWSFlightClient <hostname>` |
+| **PollFlightInfo Fixed** | 65s polling test | `java --add-opens=... -cp "target/classes:$(mvn dependency:build-classpath -Dmdep.outputFile=/dev/stdout -q)" org.example.PollFlightClient --fixed-polling your-hostname` |
+| **PollFlightInfo Long** | Long query test | `java --add-opens=... -cp "target/classes:$(mvn dependency:build-classpath -Dmdep.outputFile=/dev/stdout -q)" org.example.PollFlightClient --ultra-long your-hostname` |
 | **JAR Server** | Deployment | `java --add-opens=... -jar target/simple-flight-server-1.0-SNAPSHOT.jar -server` |
 | **JAR Client** | Deployment | `java --add-opens=... -jar target/simple-flight-server-1.0-SNAPSHOT.jar` |
 
@@ -404,8 +532,10 @@ This project includes complete AWS infrastructure automation to deploy the Fligh
 
 ### What Gets Deployed
 
-- **EC2 Instance**: Amazon Linux 2023 with Java 21 and your Flight server
+- **EC2 Instance**: Amazon Linux 2023 with Java 17 and your Flight server
 - **Network Load Balancer**: Internet-facing NLB for gRPC traffic on port 8815
+  - **Connection Timeout**: 6000 seconds (100 minutes, maximum allowed)
+  - **Health Checks**: TCP health checks on port 8815
 - **VPC & Networking**: Complete networking setup with security groups
 - **Auto-start Service**: Systemd service that automatically starts your Flight server
 
@@ -476,6 +606,22 @@ java --add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED \
 
 To modify the server behavior, edit the `SampleFlightProducer` class in `Main.java`. The producer implements:
 - `listFlights()` - Returns available flights
-- `getFlightInfo()` - Provides flight metadata
+- `getFlightInfo()` - Provides flight metadata (blocking for long queries)
+- `pollFlightInfo()` - **NEW**: Non-blocking long-running query support
 - `getStream()` - Serves data streams
 - `doAction()` - Handles custom actions
+
+### PollFlightInfo Implementation
+
+The server includes a complete **PollFlightInfo** implementation that:
+- Follows the Apache Arrow Flight specification exactly
+- Supports concurrent long-running queries with real-time progress tracking
+- Provides non-blocking query execution for queries exceeding NLB timeout limits
+- Returns proper FlightInfo evolution (empty endpoints → complete FlightInfo)
+- Handles query expiration and cleanup automatically
+
+Key implementation details:
+- **Query State Management**: Thread-safe concurrent query tracking
+- **Background Execution**: Separate threads for query simulation
+- **Progress Updates**: Real-time progress from 0% to 100%
+- **Specification Compliance**: Proper PollInfo responses with FlightDescriptor management

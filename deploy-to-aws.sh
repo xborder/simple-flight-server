@@ -60,10 +60,10 @@ if [[ "$1" == "--update-server" ]]; then
 
     # Upload and restart server
     echo -e "\n${YELLOW}Uploading new server binary...${NC}"
-    scp -i flight-server-key.pem -o StrictHostKeyChecking=no "$JAR_FILE" "ec2-user@$INSTANCE_IP:/tmp/"
+    scp -i your-key-name.pem -o StrictHostKeyChecking=no "$JAR_FILE" "ec2-user@$INSTANCE_IP:/tmp/"
 
     echo -e "\n${YELLOW}Restarting Flight server...${NC}"
-    ssh -i flight-server-key.pem -o StrictHostKeyChecking=no "ec2-user@$INSTANCE_IP" << 'EOF'
+    ssh -i your-key-name.pem -o StrictHostKeyChecking=no "ec2-user@$INSTANCE_IP" << 'EOF'
 sudo systemctl stop flight-server
 sudo mv /tmp/simple-flight-server-1.0-SNAPSHOT.jar /opt/flight-server/
 sudo chown flight:flight /opt/flight-server/simple-flight-server-1.0-SNAPSHOT.jar

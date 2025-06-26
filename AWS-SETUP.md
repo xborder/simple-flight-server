@@ -72,8 +72,8 @@ You need an EC2 Key Pair for SSH access to your instance.
 
 ### Option A: Create via AWS CLI
 ```bash
-aws ec2 create-key-pair --key-name flight-server-key --query 'KeyMaterial' --output text > flight-server-key.pem
-chmod 400 flight-server-key.pem
+aws ec2 create-key-pair --key-name your-key-name --query 'KeyMaterial' --output text > your-key-name.pem
+chmod 400 your-key-name.pem
 ```
 
 ### Option B: Create via AWS Console

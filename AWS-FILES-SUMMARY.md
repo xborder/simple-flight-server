@@ -74,7 +74,7 @@ This document provides an overview of all the AWS-related files created for depl
 
 **Usage:**
 ```bash
-mvn exec:java -Dexec.mainClass="org.example.AWSFlightClient" -Dexec.args="your-nlb-dns.elb.amazonaws.com"
+mvn exec:java -Dexec.mainClass="org.example.AWSFlightClient" -Dexec.args="your-load-balancer-dns.elb.amazonaws.com"
 ```
 
 ## 🔄 Deployment Workflow
@@ -86,8 +86,8 @@ mvn exec:java -Dexec.mainClass="org.example.AWSFlightClient" -Dexec.args="your-n
 aws configure
 
 # Create EC2 key pair
-aws ec2 create-key-pair --key-name flight-server-key --query 'KeyMaterial' --output text > flight-server-key.pem
-chmod 400 flight-server-key.pem
+aws ec2 create-key-pair --key-name your-key-name --query 'KeyMaterial' --output text > your-key-name.pem
+chmod 400 your-key-name.pem
 ```
 
 ### 2. Build Application
@@ -170,22 +170,22 @@ mvn clean package
 ### Useful Commands
 ```bash
 # Check service status
-ssh -i flight-server-key.pem ec2-user@INSTANCE_IP
+ssh -i your-key-name.pem ec2-user@YOUR_INSTANCE_IP
 sudo systemctl status flight-server
 sudo journalctl -u flight-server -f
 
 # Check load balancer health
-aws elbv2 describe-target-health --target-group-arn TARGET_GROUP_ARN
+aws elbv2 describe-target-health --target-group-arn YOUR_TARGET_GROUP_ARN
 
 # View CloudFormation events
-aws cloudformation describe-stack-events --stack-name flight-server-stack
+aws cloudformation describe-stack-events --stack-name your-stack-name
 ```
 
 ## 🧹 Cleanup
 
 To avoid ongoing charges:
 ```bash
-aws cloudformation delete-stack --stack-name flight-server-stack --region us-east-1
+aws cloudformation delete-stack --stack-name your-stack-name --region your-region
 ```
 
 This will delete all resources created by the CloudFormation template.

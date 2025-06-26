@@ -11,7 +11,8 @@ import org.apache.arrow.vector.types.pojo.Schema;
  * Flight client specifically configured for AWS deployment
  * This client connects to the Flight server deployed on AWS behind a Network Load Balancer
  */
-public class AWSFlightClient {
+public class
+AWSFlightClient {
   
   public static void main(String[] args) throws Exception {
     if (args.length == 0) {
